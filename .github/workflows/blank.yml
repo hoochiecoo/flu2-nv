@@ -19,12 +19,17 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # 🔥 ИСПРАВЛЕНИЕ: Принудительно ставим Gradle 8.2 (стабильный)
-    # Это решит проблему с Gradle 9 и отсутствующим враппером
+    # Принудительно используем Gradle 8.2
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.2'
+
+    # 🔥 ИСПРАВЛЕНИЕ 1: Удаляем ссылки на иконки, так как файлов картинок нет
+    - name: Fix Manifest (Remove missing icons)
+      run: |
+        sed -i '/android:icon/d' app/src/main/AndroidManifest.xml
+        sed -i '/android:roundIcon/d' app/src/main/AndroidManifest.xml
 
     - name: Download and Setup OpenCV 4.12.0
       run: |
@@ -39,10 +44,17 @@ jobs:
         android {
             namespace 'org.opencv'
             compileSdkVersion 34
+            
             defaultConfig {
                 minSdkVersion 24
                 targetSdkVersion 34
             }
+            
+            // 🔥 ИСПРАВЛЕНИЕ 2: Включаем BuildConfig, чтобы OpenCV не падал при компиляции
+            buildFeatures {
+                buildConfig true
+            }
+
             buildTypes {
                 release {
                     minifyEnabled false
@@ -59,7 +71,6 @@ jobs:
         }
         EOF
 
-    # Теперь используем просто 'gradle', но это будет версия 8.2, которую мы установили выше
     - name: Build Debug APK
       run: gradle assembleDebug
 
