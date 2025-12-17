@@ -1,97 +1,70 @@
 package com.example.opencvproject
 
-import android.os.Build
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
-import android.widget.TextView
+import android.widget.Button
+import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
 import org.opencv.android.OpenCVLoader
-import java.io.File
+import org.opencv.android.Utils
+import org.opencv.core.Mat
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 
 class MainActivity : AppCompatActivity() {
-
-    private lateinit var tvLog: TextView
-    private val logBuilder = StringBuilder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        tvLog = findViewById(R.id.tvLog)
-        
-        // --- ЗАПУСК ДИАГНОСТИКИ ---
-        runDiagnostics()
-    }
+        // Инициализация (мы знаем, что она работает, но проверка нужна)
+        OpenCVLoader.initDebug()
 
-    private fun runDiagnostics() {
-        log("🟦 STARTING DIAGNOSTICS...")
+        val imageView = findViewById<ImageView>(R.id.imageView)
+        val btnProcess = findViewById<Button>(R.id.btnProcess)
 
-        // ЧЕКПОИНТ 1: Архитектура устройства
-        log("\n--- CHECKPOINT 1: DEVICE INFO ---")
-        val abis = Build.SUPPORTED_ABIS.joinToString(", ")
-        log("Device ABIs: $abis")
-        log("Android Version: SDK ${Build.VERSION.SDK_INT}")
+        // 1. Создаем тестовую картинку (Bitmap) программно
+        // (Желтый квадрат на синем фоне)
+        val originalBitmap = Bitmap.createBitmap(500, 500, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(originalBitmap)
+        canvas.drawColor(Color.BLUE) // Фон
+        val paint = android.graphics.Paint().apply { color = Color.YELLOW }
+        canvas.drawRect(100f, 100f, 400f, 400f, paint) // Квадрат
 
-        // ЧЕКПОИНТ 2: Поиск папки с библиотеками
-        log("\n--- CHECKPOINT 2: NATIVE LIB PATH ---")
-        val libPath = applicationInfo.nativeLibraryDir
-        log("Expecting libs at: $libPath")
-        
-        val libFile = File(libPath, "libopencv_java4.so")
-        if (libFile.exists()) {
-            log("✅ FILE FOUND: libopencv_java4.so exists!")
-            log("File size: ${libFile.length() / 1024} KB")
-        } else {
-            log("❌ FILE MISSING: libopencv_java4.so NOT found in native path.")
-            log("Listing all files in dir:")
-            try {
-                val dir = File(libPath)
-                val files = dir.listFiles()
-                if (files.isNullOrEmpty()) {
-                    log("  (Directory is empty)")
-                } else {
-                    files.forEach { log("  - ${it.name}") }
-                }
-            } catch (e: Exception) {
-                log("  Error reading dir: ${e.message}")
-            }
-        }
+        // Показываем оригинал
+        imageView.setImageBitmap(originalBitmap)
 
-        // ЧЕКПОИНТ 3: Стандартная инициализация
-        log("\n--- CHECKPOINT 3: OpenCVLoader.initDebug() ---")
-        try {
-            val success = OpenCVLoader.initDebug()
-            if (success) {
-                log("✅ SUCCESS: OpenCVLoader initialized!")
-            } else {
-                log("❌ FAILURE: OpenCVLoader returned false.")
-            }
-        } catch (e: Exception) {
-            log("❌ EXCEPTION in initDebug: ${e.message}")
-        }
+        btnProcess.setOnClickListener {
+            // --- МАГИЯ OPENCV НАЧИНАЕТСЯ ЗДЕСЬ ---
+            
+            // 1. Конвертируем Android Bitmap -> OpenCV Mat
+            val src = Mat()
+            Utils.bitmapToMat(originalBitmap, src)
 
-        // ЧЕКПОИНТ 4: Ручная загрузка (если нужно)
-        if (!OpenCVLoader.initDebug()) {
-            log("\n--- CHECKPOINT 4: Manual System.loadLibrary ---")
-            try {
-                System.loadLibrary("opencv_java4")
-                log("✅ SUCCESS: System.loadLibrary loaded it manually!")
-                log("Warning: initDebug() failed, but library is usable.")
-            } catch (e: UnsatisfiedLinkError) {
-                log("❌ CRITICAL ERROR: UnsatisfiedLinkError")
-                log("Message: ${e.message}")
-                log("This usually means the .so file is missing for architecture: ${Build.CPU_ABI}")
-            } catch (e: Exception) {
-                log("❌ ERROR: ${e.message}")
-            }
-        }
+            // 2. Делаем черно-белым (RGB -> Gray)
+            val gray = Mat()
+            Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY)
 
-        log("\n🟦 DIAGNOSTICS FINISHED")
-    }
+            // 3. Размываем, чтобы убрать шум (Gaussian Blur)
+            Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
 
-    private fun log(message: String) {
-        logBuilder.append(message).append("\n")
-        runOnUiThread {
-            tvLog.text = logBuilder.toString()
+            // 4. Находим границы (Canny Edge Detection)
+            val edges = Mat()
+            Imgproc.Canny(gray, edges, 80.0, 100.0)
+
+            // 5. Конвертируем обратно OpenCV Mat -> Android Bitmap
+            // (edges - это одноканальное изображение, создадим для него Bitmap)
+            val resultBitmap = Bitmap.createBitmap(edges.cols(), edges.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(edges, resultBitmap)
+
+            // Показываем результат
+            imageView.setImageBitmap(resultBitmap)
+            
+            // Освобождаем память (в C++ это важно!)
+            src.release()
+            gray.release()
+            edges.release()
         }
     }
 }
