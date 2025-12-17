@@ -1,4 +1,4 @@
-name: Android Build with OpenCV
+name: Flutter Build with OpenCV
 
 on:
   push:
@@ -19,67 +19,64 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    # Устанавливаем Flutter
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: 'stable'
+        
+    - name: Flutter Pub Get
+      run: flutter pub get
+
+    # Настройка Gradle 8.2 (чтобы совпадало с локальной версией)
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.2'
 
-    # 🔥 ИСПРАВЛЕНИЕ 1: Заставляем Android распаковывать .so файлы на диск
-    # Это исправит ошибку "FILE MISSING" в вашей диагностике
-    - name: Force Extract Native Libs & Remove Icons
-      run: |
-        sed -i '/android:icon/d' app/src/main/AndroidManifest.xml
-        sed -i '/android:roundIcon/d' app/src/main/AndroidManifest.xml
-        # Добавляем extractNativeLibs="true" в тег <application>
-        sed -i 's/<application/<application android:extractNativeLibs="true"/g' app/src/main/AndroidManifest.xml
-
+    # 🔥 СКАЧИВАНИЕ OPENCV (В папку android/opencv)
     - name: Download and Setup OpenCV 4.12.0
       run: |
         echo "Downloading OpenCV..."
         wget -q https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-android-sdk.zip
         unzip -q opencv-4.12.0-android-sdk.zip
-        mv OpenCV-android-sdk opencv
+        
+        # Перемещаем внутрь папки android!
+        mv OpenCV-android-sdk android/opencv
         
         echo "Moving OpenCV libs to jniLibs..."
-        mkdir -p opencv/sdk/java/src/main/jniLibs
-        cp -r opencv/sdk/native/libs/* opencv/sdk/java/src/main/jniLibs/
+        mkdir -p android/opencv/sdk/java/src/main/jniLibs
+        cp -r android/opencv/sdk/native/libs/* android/opencv/sdk/java/src/main/jniLibs/
 
-    # 🔥 ИСПРАВЛЕНИЕ 2: Копируем libc++_shared.so (более агрессивный поиск)
+    # 🔥 ИСПРАВЛЕНИЕ: Копируем libc++_shared.so (для работы OpenCV)
     - name: Inject Standard C++ Library
       run: |
-        echo "Looking for NDK..."
-        # На GitHub Actions NDK обычно тут
         NDK_ROOT=$ANDROID_NDK_HOME
-        echo "NDK Path: $NDK_ROOT"
         
         copy_stl() {
-           ARCH_NAME=$1  # Например: arm64-v8a
-           ABI_NAME=$2   # Например: aarch64
-           
-           echo "--- Processing $ARCH_NAME ---"
-           
-           # Ищем файл libc++_shared.so внутри NDK, фильтруем по архитектуре
-           # head -n 1 берет первый попавшийся (обычно самый свежий)
+           ARCH_NAME=$1
+           ABI_NAME=$2
+           # Ищем libc++_shared.so
            STL_FILE=$(find $NDK_ROOT -name "libc++_shared.so" | grep "$ABI_NAME" | head -n 1)
            
            if [ -z "$STL_FILE" ]; then
                echo "❌ ERROR: libc++_shared.so not found for $ARCH_NAME!"
-               exit 1 # Остановка сборки, если файл не найден
+               exit 1
            fi
            
-           echo "✅ Found: $STL_FILE"
-           cp "$STL_FILE" "opencv/sdk/java/src/main/jniLibs/$ARCH_NAME/"
+           echo "✅ Found: $STL_FILE -> $ARCH_NAME"
+           cp "$STL_FILE" "android/opencv/sdk/java/src/main/jniLibs/$ARCH_NAME/"
         }
 
-        # Внимательно сопоставляем архитектуры
         copy_stl "arm64-v8a" "aarch64"
         copy_stl "armeabi-v7a" "arm-linux-androideabi"
         copy_stl "x86" "i686"
         copy_stl "x86_64" "x86_64"
 
-    - name: Configure build.gradle
+    # Создаем правильный build.gradle для OpenCV
+    - name: Configure OpenCV build.gradle
       run: |
-        cat <<EOF > opencv/sdk/java/build.gradle
+        cat <<EOF > android/opencv/sdk/java/build.gradle
         apply plugin: 'com.android.library'
         android {
             namespace 'org.opencv'
@@ -107,23 +104,11 @@ jobs:
         }
         EOF
 
-    # Добавляем packagingOptions в app/build.gradle, чтобы разрешить дубликаты (на всякий случай)
-    - name: Patch App Build Gradle
-      run: |
-        cat <<EOF >> app/build.gradle
-        android {
-            packagingOptions {
-                pickFirst 'lib/*/libc++_shared.so'
-                pickFirst 'lib/*/libopencv_java4.so'
-            }
-        }
-        EOF
-
-    - name: Build Debug APK
-      run: gradle assembleDebug
+    - name: Build Flutter APK
+      run: flutter build apk --debug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: build/app/outputs/flutter-apk/app-debug.apk
