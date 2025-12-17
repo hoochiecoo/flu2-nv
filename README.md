@@ -1,4 +1,4 @@
-# OpenCV Android Project
+# OpenCV Android Project1
 
 ### Как запустить локально:
 
