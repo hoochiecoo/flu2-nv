@@ -19,13 +19,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Принудительно используем Gradle 8.2
+    # Принудительно используем Gradle 8.2 (стабильный)
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.2'
 
-    # 🔥 ИСПРАВЛЕНИЕ 1: Удаляем ссылки на иконки, так как файлов картинок нет
+    # Удаляем иконки из манифеста, чтобы не было ошибки Missing Resource
     - name: Fix Manifest (Remove missing icons)
       run: |
         sed -i '/android:icon/d' app/src/main/AndroidManifest.xml
@@ -37,6 +37,12 @@ jobs:
         wget -q https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-android-sdk.zip
         unzip -q opencv-4.12.0-android-sdk.zip
         mv OpenCV-android-sdk opencv
+        
+        echo "🔥 FIX: Moving native libs to standard folder..."
+        # Мы физически копируем библиотеки (.so) внутрь модуля Java.
+        # Это гарантирует, что Gradle их увидит и упакует в APK.
+        mkdir -p opencv/sdk/java/src/main/jniLibs
+        cp -r opencv/sdk/native/libs/* opencv/sdk/java/src/main/jniLibs/
         
         echo "Injecting modern build.gradle..."
         cat <<EOF > opencv/sdk/java/build.gradle
@@ -50,7 +56,7 @@ jobs:
                 targetSdkVersion 34
             }
             
-            // 🔥 ИСПРАВЛЕНИЕ 2: Включаем BuildConfig, чтобы OpenCV не падал при компиляции
+            // Включаем BuildConfig (нужен для OpenCV 4.12)
             buildFeatures {
                 buildConfig true
             }
@@ -60,9 +66,11 @@ jobs:
                     minifyEnabled false
                 }
             }
+            
             sourceSets {
                 main {
-                    jniLibs.srcDirs = ['../native/libs']
+                    // Указываем стандартный путь, куда мы только что скопировали файлы
+                    jniLibs.srcDirs = ['src/main/jniLibs']
                     java.srcDirs = ['src']
                     res.srcDirs = ['res']
                     manifest.srcFile 'AndroidManifest.xml'
