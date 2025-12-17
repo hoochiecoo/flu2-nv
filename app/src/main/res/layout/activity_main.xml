@@ -3,30 +3,19 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:gravity="center">
 
-    <TextView
-        android:layout_width="match_parent"
+    <ImageView
+        android:id="@+id/imageView"
+        android:layout_width="300dp"
+        android:layout_height="300dp"
+        android:background="#DDDDDD" />
+
+    <Button
+        android:id="@+id/btnProcess"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="OpenCV Debug Log"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="10dp"/>
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="#EEEEEE"
-        android:padding="10dp">
-
-        <TextView
-            android:id="@+id/tvLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:text="Waiting for checkpoints..."
-            android:textSize="12sp"
-            android:textColor="#000000"/>
-    </ScrollView>
+        android:text="Сделать магию (Canny)"
+        android:layout_marginTop="20dp"/>
 
 </LinearLayout>
