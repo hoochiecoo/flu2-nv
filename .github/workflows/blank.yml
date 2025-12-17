@@ -19,13 +19,11 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Принудительно используем Gradle 8.2 (стабильный)
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.2'
 
-    # Удаляем иконки из манифеста, чтобы не было ошибки Missing Resource
     - name: Fix Manifest (Remove missing icons)
       run: |
         sed -i '/android:icon/d' app/src/main/AndroidManifest.xml
@@ -39,10 +37,29 @@ jobs:
         mv OpenCV-android-sdk opencv
         
         echo "🔥 FIX: Moving native libs to standard folder..."
-        # Мы физически копируем библиотеки (.so) внутрь модуля Java.
-        # Это гарантирует, что Gradle их увидит и упакует в APK.
         mkdir -p opencv/sdk/java/src/main/jniLibs
         cp -r opencv/sdk/native/libs/* opencv/sdk/java/src/main/jniLibs/
+        
+        echo "🔥 FIX: Injecting libc++_shared.so from NDK..."
+        # OpenCV написана на C++ и требует эту библиотеку. Мы крадем её из NDK сервера.
+        
+        # 1. Определяем путь к NDK
+        NDK_ROOT=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib
+        
+        # 2. Копируем для arm64-v8a (современные телефоны)
+        if [ -d "opencv/sdk/java/src/main/jniLibs/arm64-v8a" ]; then
+            cp "$NDK_ROOT/aarch64-linux-android/libc++_shared.so" opencv/sdk/java/src/main/jniLibs/arm64-v8a/
+        fi
+        
+        # 3. Копируем для armeabi-v7a (старые телефоны)
+        if [ -d "opencv/sdk/java/src/main/jniLibs/armeabi-v7a" ]; then
+            cp "$NDK_ROOT/arm-linux-androideabi/libc++_shared.so" opencv/sdk/java/src/main/jniLibs/armeabi-v7a/
+        fi
+
+        # 4. Копируем для x86_64 (эмуляторы)
+        if [ -d "opencv/sdk/java/src/main/jniLibs/x86_64" ]; then
+            cp "$NDK_ROOT/x86_64-linux-android/libc++_shared.so" opencv/sdk/java/src/main/jniLibs/x86_64/
+        fi
         
         echo "Injecting modern build.gradle..."
         cat <<EOF > opencv/sdk/java/build.gradle
@@ -50,26 +67,20 @@ jobs:
         android {
             namespace 'org.opencv'
             compileSdkVersion 34
-            
             defaultConfig {
                 minSdkVersion 24
                 targetSdkVersion 34
             }
-            
-            // Включаем BuildConfig (нужен для OpenCV 4.12)
             buildFeatures {
                 buildConfig true
             }
-
             buildTypes {
                 release {
                     minifyEnabled false
                 }
             }
-            
             sourceSets {
                 main {
-                    // Указываем стандартный путь, куда мы только что скопировали файлы
                     jniLibs.srcDirs = ['src/main/jniLibs']
                     java.srcDirs = ['src']
                     res.srcDirs = ['res']
